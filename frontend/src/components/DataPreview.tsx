@@ -22,7 +22,6 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data }) => {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const rowsPerPage = 10;
 
-  // ✅ Now safe, because data.rows is guaranteed
   const filteredAndSortedRows = useMemo(() => {
     let filtered = data.rows.filter((row) =>
       Object.values(row).some((value) =>

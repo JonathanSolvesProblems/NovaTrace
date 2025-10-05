@@ -49,7 +49,7 @@ def load_raw_dataset(path: str) -> pd.DataFrame:
     """Load CSV or Excel as-is, without feature mapping."""
     ext = os.path.splitext(path)[1].lower()
     try:
-        if ext in [".xlsx", ".xls"]:   # ✅ handle both
+        if ext in [".xlsx", ".xls"]:
             df = pd.read_excel(path, engine="openpyxl")
         else:
             try:
@@ -104,7 +104,7 @@ def load_features(df: pd.DataFrame, mission="kepler"):
 # ---------------------------------
 def build_model():
     model = xgb.XGBClassifier(
-        objective="multi:softprob",  # ✅ outputs probabilities
+        objective="multi:softprob",
         eval_metric="mlogloss",
         n_estimators=500,
         max_depth=6,
