@@ -192,7 +192,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       <div className="flex justify-center mt-6">
         <button
           onClick={() => setRetrainOpen(true)}
-          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white"
+          className="px-4 py-2 rounded-lg  bg-purple-600 hover:bg-purple-500 text-white"
         >
           Retrain Model
         </button>
