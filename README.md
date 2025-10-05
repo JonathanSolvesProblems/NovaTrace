@@ -2,7 +2,7 @@
 
 NovaTrace is a web application for detecting and classifying exoplanets using a machine learning model trained on NASA datasets. Users can upload their own data, explore predictions, retrain the model, and visualize planetary systems in 3D.
 
-Demo video in less than 30 seconds: [NovaTrace](https://www.youtube.com/watch?v=dj61c_GsUUk)
+Demo video in less than 30 seconds: [NovaTrace](https://www.youtube.com/watch?v=I6YasTgh2mI)
 
 ---
 
