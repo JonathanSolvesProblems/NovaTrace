@@ -5,7 +5,6 @@ import {
   PieChart,
   TrendingUp,
   Activity,
-  CircleDot,
 } from "lucide-react";
 
 interface DataExplorationProps {
@@ -14,6 +13,13 @@ interface DataExplorationProps {
     rows: Record<string, any>[];
   };
 }
+
+type TooltipState = {
+  visible: boolean;
+  x: number;
+  y: number;
+  content: string;
+};
 
 const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
   const [selectedChart, setSelectedChart] = useState<
@@ -68,21 +74,39 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
     return { dispositions, columns, total: data.rows.length };
   }, [data]);
 
-  // -----------------------------
-  // Chart Components
-  // -----------------------------
+  // color mapping reused by charts & legend
+  const color = (disp: string) => {
+    switch ((disp || "").toUpperCase()) {
+      case "CP":
+      case "CONFIRMED":
+        return "#10b981"; // green
+      case "PC":
+      case "CANDIDATE":
+        return "#facc15"; // yellow
+      case "FP":
+      case "FALSE POSITIVE":
+        return "#ef4444"; // red
+      default:
+        return "#94a3b8"; // slate (unknown)
+    }
+  };
 
+  // -----------------------------
+  // Scatter Plot (improved)
+  // -----------------------------
   const ScatterPlot: React.FC = () => {
     const scatter = useMemo(() => {
       if (!data?.rows) return [];
       return data.rows
         .map((r) => {
-          const x = parseFloat(r.period ?? ""); // your x-axis
-          const y = parseFloat(r.radius ?? r.depth ?? ""); // your y-axis
+          // your dataset has 'period' and 'radius' keys (per earlier logs)
+          const x = parseFloat(r.period ?? "");
+          const y = parseFloat(r.radius ?? r.depth ?? "");
           const disp = String(
             r.Predicted_Disposition ?? r.koi_disposition ?? "UNKNOWN"
           ).toUpperCase();
-          return { x, y, disp };
+          const meta = { raw: r };
+          return { x, y, disp, meta };
         })
         .filter((p) => !isNaN(p.x) && !isNaN(p.y));
     }, [data]);
@@ -90,39 +114,59 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
     const maxX = Math.max(...scatter.map((d) => d.x), 1);
     const maxY = Math.max(...scatter.map((d) => d.y), 1);
 
-    const color = (disp: string) => {
-      switch (disp) {
-        case "CP":
-        case "CONFIRMED":
-          return "#10b981";
-        case "PC":
-        case "CANDIDATE":
-          return "#facc15";
-        case "FP":
-        case "FALSE POSITIVE":
-          return "#ef4444";
-        default:
-          return "#94a3b8";
-      }
-    };
+    // tooltip state
+    const [tooltip, setTooltip] = useState<TooltipState>({
+      visible: false,
+      x: 0,
+      y: 0,
+      content: "",
+    });
+
+    // Plot dimensions (viewBox coords)
+    const plot = { left: 40, top: 30, width: 320, height: 180, bottom: 210 };
 
     return (
       <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50">
-        <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
-          <ScatterChart className="w-5 h-5 text-purple-400" />
-          <span>Orbital Period vs Planet Radius</span>
-        </h4>
+        <div className="flex items-start justify-between">
+          <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
+            <ScatterChart className="w-5 h-5 text-purple-400" />
+            <span>Orbital Period vs Planet Radius</span>
+          </h4>
+
+          {/* HTML legend (outside svg so it never overlaps) */}
+          <div className="flex items-center space-x-3 mt-1">
+            {["CONFIRMED", "CANDIDATE", "FALSE POSITIVE", "UNKNOWN"].map(
+              (d) => (
+                <div key={d} className="flex items-center space-x-2">
+                  <span
+                    className="w-3 h-3 rounded-sm inline-block"
+                    style={{ backgroundColor: color(d) }}
+                  />
+                  <span className="text-xs text-slate-300">{d}</span>
+                </div>
+              )
+            )}
+          </div>
+        </div>
 
         <div className="relative h-64 bg-slate-900/40 rounded-lg overflow-hidden">
-          <svg className="w-full h-full" viewBox="0 0 400 250">
+          <svg
+            className="w-full h-full"
+            viewBox="0 0 400 250"
+            role="img"
+            aria-label="Scatter plot of orbital period vs planet radius"
+          >
+            {/* background overlay */}
+            <rect x="0" y="0" width="400" height="250" fill="transparent" />
+
             {/* Grid lines - horizontal */}
             {[...Array(5)].map((_, i) => {
-              const y = 210 - (i * 180) / 4;
+              const y = plot.bottom - (i * plot.height) / 4;
               return (
                 <line
                   key={`hgrid-${i}`}
-                  x1="40"
-                  x2="360"
+                  x1={plot.left}
+                  x2={plot.left + plot.width}
                   y1={y}
                   y2={y}
                   stroke="#64748b"
@@ -133,42 +177,121 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
 
             {/* Grid lines - vertical */}
             {[...Array(5)].map((_, i) => {
-              const x = 40 + (i * 320) / 4;
+              const x = plot.left + (i * plot.width) / 4;
               return (
                 <line
                   key={`vgrid-${i}`}
-                  y1="210"
-                  y2="30"
                   x1={x}
                   x2={x}
+                  y1={plot.top}
+                  y2={plot.bottom}
                   stroke="#64748b"
                   strokeDasharray="2,2"
                 />
               );
             })}
 
-            {/* Scatter points */}
-            {scatter.map((p, i) => {
-              const x = 40 + (p.x / maxX) * 320;
-              const y = 210 - (p.y / maxY) * 180;
+            {/* axes */}
+            <line
+              x1={plot.left}
+              y1={plot.bottom}
+              x2={plot.left + plot.width}
+              y2={plot.bottom}
+              stroke="#475569"
+              strokeWidth={1.2}
+            />
+            <line
+              x1={plot.left}
+              y1={plot.bottom}
+              x2={plot.left}
+              y2={plot.top}
+              stroke="#475569"
+              strokeWidth={1.2}
+            />
+
+            {/* tick labels (x) */}
+            {[0, 1, 2, 3, 4].map((i) => {
+              const val = Math.round(((maxX * i) / 4) * 10) / 10;
+              const x = plot.left + (i * plot.width) / 4;
               return (
-                <circle
-                  key={i}
-                  cx={x}
-                  cy={y}
-                  r="4"
-                  fill={color(p.disp)}
-                  stroke="#000"
-                  strokeWidth="0.3"
-                  opacity="0.8"
-                />
+                <text
+                  key={`xt-${i}`}
+                  x={x}
+                  y={plot.bottom + 14}
+                  fill="#94a3b8"
+                  fontSize="10"
+                  textAnchor="middle"
+                >
+                  {val}
+                </text>
               );
             })}
 
-            {/* Axes labels */}
+            {/* tick labels (y) */}
+            {[0, 1, 2, 3, 4].map((i) => {
+              const val = Math.round(((maxY * i) / 4) * 10) / 10;
+              const y = plot.bottom - (i * plot.height) / 4;
+              return (
+                <text
+                  key={`yt-${i}`}
+                  x={plot.left - 10}
+                  y={y + 4}
+                  fill="#94a3b8"
+                  fontSize="10"
+                  textAnchor="end"
+                >
+                  {val}
+                </text>
+              );
+            })}
+
+            {/* Points (with invisible larger hit area for hover) */}
+            {scatter.map((p, i) => {
+              const cx = plot.left + (p.x / maxX) * plot.width;
+              const cy = plot.bottom - (p.y / maxY) * plot.height;
+              return (
+                <g key={i}>
+                  {/* visible dot */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={4}
+                    fill={color(p.disp)}
+                    stroke="#000"
+                    strokeWidth={0.3}
+                    opacity={0.95}
+                  />
+                  {/* larger transparent hit area */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={8}
+                    fill="transparent"
+                    onMouseEnter={(e) => {
+                      setTooltip({
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: `Period: ${p.x}\nRadius: ${p.y}\nClass: ${p.disp}`,
+                      });
+                    }}
+                    onMouseMove={(e) => {
+                      setTooltip((t) => ({ ...t, x: e.clientX, y: e.clientY }));
+                    }}
+                    onMouseLeave={() =>
+                      setTooltip({ visible: false, x: 0, y: 0, content: "" })
+                    }
+                    style={{ cursor: "pointer" }}
+                    aria-label={`Point ${i} period ${p.x} radius ${p.y} ${p.disp}`}
+                  />
+                </g>
+              );
+            })}
+
+            {/* axis labels */}
             <text
-              x="200"
-              y="235"
+              x={plot.left + plot.width / 2}
+              y={plot.bottom + 30}
               fill="#94a3b8"
               fontSize="12"
               textAnchor="middle"
@@ -176,38 +299,46 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
               Orbital Period (days)
             </text>
             <text
-              x="20"
-              y="120"
+              x={plot.left - 30}
+              y={plot.top + plot.height / 2}
               fill="#94a3b8"
               fontSize="12"
               textAnchor="middle"
-              transform="rotate(-90 20 120)"
+              transform={`rotate(-90 ${plot.left - 30} ${
+                plot.top + plot.height / 2
+              })`}
             >
               Radius (R⊕)
             </text>
-
-            {/* Legend - moved outside plotting area */}
-            <g transform={`translate(370, 40)`}>
-              {["CONFIRMED", "CANDIDATE", "FALSE POSITIVE"].map((disp, i) => (
-                <g key={`legend-${i}`} transform={`translate(0, ${i * 20})`}>
-                  <rect width="10" height="10" fill={color(disp)} />
-                  <text x="14" y="10" fill="#fff" fontSize="10">
-                    {disp}
-                  </text>
-                </g>
-              ))}
-            </g>
           </svg>
+
+          {/* Tooltip (HTML) */}
+          {tooltip.visible && (
+            <div
+              className="pointer-events-none z-50 absolute bg-black/80 text-white text-xs rounded px-2 py-1 whitespace-pre-line"
+              style={{
+                left: tooltip.x + 12,
+                top: tooltip.y + 12,
+                transform: "translate(-50%, 0)",
+                minWidth: 120,
+              }}
+            >
+              {tooltip.content}
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
+  // -----------------------------
+  // Histogram Chart (improved)
+  // -----------------------------
   const HistogramChart: React.FC = () => {
     const periods = useMemo(() => {
       const vals =
         data?.rows
-          ?.map((r) => parseFloat(r.period ?? "")) // <- use 'period' here
+          ?.map((r) => parseFloat(r.period ?? ""))
           .filter((v) => !isNaN(v) && v > 0) || [];
       vals.sort((a, b) => a - b);
       return vals;
@@ -220,33 +351,62 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
         </div>
       );
 
-    const bins = 25;
-    const min = periods[0],
-      max = periods[periods.length - 1],
-      width = (max - min) / bins;
+    // dynamic bin count (sqrt rule gives reasonable bins for small datasets)
+    const bins = Math.max(5, Math.round(Math.sqrt(periods.length)));
+    const min = periods[0];
+    const max = periods[periods.length - 1];
+    const width = (max - min) / bins || 1;
     const histogram = Array(bins).fill(0);
     periods.forEach((v) => {
       const i = Math.min(bins - 1, Math.floor((v - min) / width));
       histogram[i]++;
     });
-    const maxCount = Math.max(...histogram);
+    const maxCount = Math.max(...histogram, 1);
+
+    // tooltip state for bars
+    const [tooltip, setTooltip] = useState<TooltipState>({
+      visible: false,
+      x: 0,
+      y: 0,
+      content: "",
+    });
+
+    // plot dims
+    const plot = { left: 40, top: 30, width: 320, height: 180, bottom: 210 };
 
     return (
       <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50">
-        <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
-          <BarChart className="w-5 h-5 text-purple-400" />
-          <span>Orbital Period Distribution</span>
-        </h4>
+        <div className="flex items-start justify-between">
+          <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
+            <BarChart className="w-5 h-5 text-purple-400" />
+            <span>Orbital Period Distribution</span>
+          </h4>
+
+          {/* Legend showing scale */}
+          <div className="text-sm text-slate-300 mt-1">
+            <div>Bins: {bins}</div>
+            <div>
+              Range: {min}–{max}
+            </div>
+            <div>Max count: {maxCount}</div>
+          </div>
+        </div>
+
         <div className="relative h-64 bg-slate-900/40 rounded-lg overflow-hidden">
-          <svg className="w-full h-full" viewBox="0 0 400 250">
-            {/* Grid lines - horizontal */}
+          <svg
+            className="w-full h-full"
+            viewBox="0 0 400 250"
+            role="img"
+            aria-label="Histogram of orbital periods"
+          >
+            {/* grid */}
             {[...Array(5)].map((_, i) => {
-              const y = 210 - (i * 180) / 4;
+              const y = plot.bottom - (i * plot.height) / 4;
               return (
                 <line
                   key={`hgrid-${i}`}
-                  x1="40"
-                  x2="360"
+                  x1={plot.left}
+                  x2={plot.left + plot.width}
                   y1={y}
                   y2={y}
                   stroke="#64748b"
@@ -254,47 +414,120 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
                 />
               );
             })}
-
-            {/* Grid lines - vertical */}
             {[...Array(5)].map((_, i) => {
-              const x = 40 + (i * 320) / 4;
+              const x = plot.left + (i * plot.width) / 4;
               return (
                 <line
                   key={`vgrid-${i}`}
-                  y1="210"
-                  y2="30"
                   x1={x}
                   x2={x}
+                  y1={plot.top}
+                  y2={plot.bottom}
                   stroke="#64748b"
                   strokeDasharray="2,2"
                 />
               );
             })}
 
-            {/* Bars */}
-            {histogram.map((count, i) => {
-              const x = 40 + i * (320 / bins);
-              const height = (count / maxCount) * 180;
-              const y = 210 - height;
+            {/* axes */}
+            <line
+              x1={plot.left}
+              y1={plot.bottom}
+              x2={plot.left + plot.width}
+              y2={plot.bottom}
+              stroke="#475569"
+              strokeWidth={1.2}
+            />
+            <line
+              x1={plot.left}
+              y1={plot.bottom}
+              x2={plot.left}
+              y2={plot.top}
+              stroke="#475569"
+              strokeWidth={1.2}
+            />
+
+            {/* x ticks */}
+            {[0, 1, 2, 3, 4].map((i) => {
+              const val = Math.round((min + (i * (max - min)) / 4) * 10) / 10;
+              const x = plot.left + (i * plot.width) / 4;
               return (
-                <rect
-                  key={i}
+                <text
+                  key={`xt-${i}`}
                   x={x}
-                  y={y}
-                  width={320 / bins - 2}
-                  height={height}
-                  fill="#a78bfa"
-                  stroke="#7c3aed"
-                  strokeWidth="0.5"
-                  opacity="0.8"
-                />
+                  y={plot.bottom + 14}
+                  fill="#94a3b8"
+                  fontSize="10"
+                  textAnchor="middle"
+                >
+                  {val}
+                </text>
               );
             })}
 
-            {/* Axes labels */}
+            {/* bars */}
+            {histogram.map((count, i) => {
+              const x = plot.left + i * (plot.width / bins);
+              const barW = plot.width / bins - 2;
+              const height = (count / maxCount) * plot.height;
+              const y = plot.bottom - height;
+              const binMin = +(min + i * width).toFixed(3);
+              const binMax = +(min + (i + 1) * width).toFixed(3);
+              // color gradient based on count
+              const alpha = 0.4 + 0.6 * (count / maxCount);
+              return (
+                <g key={i}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={height}
+                    fill={`rgba(167,139,250,${alpha})`}
+                    stroke="#7c3aed"
+                    strokeWidth={0.4}
+                    opacity={0.95}
+                    onMouseEnter={(e) =>
+                      setTooltip({
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: `Range: ${binMin}–${binMax}\nCount: ${count}`,
+                      })
+                    }
+                    onMouseMove={(e) =>
+                      setTooltip((t) => ({ ...t, x: e.clientX, y: e.clientY }))
+                    }
+                    onMouseLeave={() =>
+                      setTooltip({ visible: false, x: 0, y: 0, content: "" })
+                    }
+                    style={{ cursor: "pointer" }}
+                  />
+                </g>
+              );
+            })}
+
+            {/* y tick labels */}
+            {[0, 1, 2, 3, 4].map((i) => {
+              const val = Math.round((maxCount * i) / 4);
+              const y = plot.bottom - (i * plot.height) / 4;
+              return (
+                <text
+                  key={`yt-${i}`}
+                  x={plot.left - 10}
+                  y={y + 4}
+                  fill="#94a3b8"
+                  fontSize="10"
+                  textAnchor="end"
+                >
+                  {val}
+                </text>
+              );
+            })}
+
+            {/* axis labels */}
             <text
-              x="200"
-              y="235"
+              x={plot.left + plot.width / 2}
+              y={plot.bottom + 30}
               fill="#94a3b8"
               fontSize="12"
               textAnchor="middle"
@@ -302,21 +535,41 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
               Orbital Period (days)
             </text>
             <text
-              x="20"
-              y="120"
+              x={plot.left - 30}
+              y={plot.top + plot.height / 2}
               fill="#94a3b8"
               fontSize="12"
               textAnchor="middle"
-              transform="rotate(-90 20 120)"
+              transform={`rotate(-90 ${plot.left - 30} ${
+                plot.top + plot.height / 2
+              })`}
             >
               Count
             </text>
           </svg>
+
+          {/* Tooltip (HTML) */}
+          {tooltip.visible && (
+            <div
+              className="pointer-events-none z-50 absolute bg-black/80 text-white text-xs rounded px-2 py-1 whitespace-pre-line"
+              style={{
+                left: tooltip.x + 12,
+                top: tooltip.y + 12,
+                transform: "translate(-50%, 0)",
+                minWidth: 120,
+              }}
+            >
+              {tooltip.content}
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
+  // -----------------------------
+  // OverviewPanel (unchanged aside from minor spacing)
+  // -----------------------------
   const OverviewPanel: React.FC = () => {
     const total = stats.total || 1;
     const colors = ["#10b981", "#facc15", "#ef4444"];
@@ -333,7 +586,12 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           {/* Donut chart */}
-          <svg className="w-40 h-40 mx-auto" viewBox="0 0 36 36">
+          <svg
+            className="w-40 h-40 mx-auto"
+            viewBox="0 0 36 36"
+            role="img"
+            aria-label="Classification distribution"
+          >
             {entries.map(([disp, count], i) => {
               const start = (cumulative / totalConfirmed) * 100;
               cumulative += count;
