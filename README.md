@@ -2,6 +2,8 @@
 
 NovaTrace is a web application for detecting and classifying exoplanets using a machine learning model trained on NASA datasets. Users can upload their own data, explore predictions, retrain the model, and visualize planetary systems in 3D.
 
+Demo video in less than 30 seconds: [NovaTrace](https://www.youtube.com/watch?v=dj61c_GsUUk)
+
 ---
 
 ## Table of Contents
@@ -20,9 +22,14 @@ NovaTrace is a web application for detecting and classifying exoplanets using a 
 
 ## Project Setup
 
-1. Clone the repository.
-2. Navigate to the `backend` folder and set up the backend server.
-3. Navigate to the `frontend` folder and set up the frontend application.
+1. Clone the repository or download and extract zip file:
+
+```bash
+git clone https://github.com/JonathanSolvesProblems/NovaTrace.git
+```
+
+2. Navigate to the `backend` folder and set up the backend server, as per steps below.
+3. Navigate to the `frontend` folder and set up the frontend application, as per steps below.
 
 ## Backend
 
@@ -70,13 +77,13 @@ The Upload tab is the home page where users can upload Excel files containing ex
 
 The **Classification** tab displays the model's predictions. Example:
 
-**Classification Results**
+**Classification Results Example**
 
 - **CONFIRMED**: High confidence exoplanet detections (50%)
 - **CANDIDATE**: Potential exoplanets requiring verification (50%)
 - **FALSE POSITIVE**: Non-planetary signals (0%)
 
-**CONFIRMED Objects**
+**CONFIRMED Objects Example**
 
 | Object ID | Period (days) | Radius (R⊕) | Stellar Temp (K) | Classification | Confidence |
 | --------- | ------------- | ----------- | ---------------- | -------------- | ---------- |
@@ -126,12 +133,12 @@ The **Data Exploration** tab provides visual analysis of model predictions and a
 - **Scatter Plots**
 - **Histograms**
 
-**Classification Distribution:**
+**Classification Distribution Example:**
 
 - 2 Candidates
 - 2 Confirmed
 
-**Key Insights:**
+**Key Insights Example:**
 
 - 2 classification categories detected
 - Typical exoplanet radii cluster around median values
