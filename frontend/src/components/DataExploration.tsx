@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { BarChart, Link as Line, TrendingUp, PieChart } from "lucide-react";
+import {
+  BarChart,
+  ScatterChart,
+  PieChart,
+  TrendingUp,
+  Activity,
+  CircleDot,
+} from "lucide-react";
 
 interface DataExplorationProps {
   data: {
@@ -10,131 +17,155 @@ interface DataExplorationProps {
 
 const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
   const [selectedChart, setSelectedChart] = useState<
-    "scatter" | "histogram" | "distribution"
-  >("scatter");
+    "overview" | "scatter" | "histogram"
+  >("overview");
 
+  // -----------------------------
+  // Compute summary statistics
+  // -----------------------------
   const stats = useMemo(() => {
     if (!data || !Array.isArray(data.rows)) {
-      return { dispositions: {}, columnStats: {} };
+      return { dispositions: {}, columns: {}, total: 0 };
     }
 
     const dispositions = data.rows.reduce(
       (acc: Record<string, number>, row) => {
-        const disp = row.Predicted_Disposition || "Unknown";
+        const disp = String(
+          row.Predicted_Disposition || "Unknown"
+        ).toUpperCase();
         acc[disp] = (acc[disp] || 0) + 1;
         return acc;
       },
       {}
     );
 
-    const numericColumns = ["koi_period", "koi_prad", "koi_slogg"];
-    const columnStats = numericColumns.reduce(
-      (acc: Record<string, any>, col) => {
-        const values = data.rows
-          .map((row) => parseFloat(row[col]))
-          .filter((val) => !isNaN(val));
-
-        if (values.length > 0) {
-          values.sort((a, b) => a - b);
-          acc[col] = {
-            min: values[0],
-            max: values[values.length - 1],
-            mean: values.reduce((sum, val) => sum + val, 0) / values.length,
-            median: values[Math.floor(values.length / 2)],
-            count: values.length,
-          };
-        }
-        return acc;
-      },
-      {}
-    );
-
-    return { dispositions, columnStats };
+    const numericCols = [
+      "koi_period",
+      "pl_orbper",
+      "koi_prad",
+      "pl_rade",
+      "koi_depth",
+      "koi_teff",
+      "st_teff",
+      "pl_trandep",
+    ];
+    const columns = numericCols.reduce((acc: Record<string, any>, col) => {
+      const vals = data.rows
+        .map((r) => parseFloat(r[col]))
+        .filter((v) => !isNaN(v))
+        .sort((a, b) => a - b);
+      if (vals.length === 0) return acc;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      acc[col] = {
+        min: vals[0],
+        max: vals[vals.length - 1],
+        mean,
+        median: vals[Math.floor(vals.length / 2)],
+        count: vals.length,
+      };
+      return acc;
+    }, {});
+    return { dispositions, columns, total: data.rows.length };
   }, [data]);
 
-  const ScatterPlot: React.FC = () => {
-    // const scatterData = useMemo(() => {
-    //   if (!data?.rows) return [];
-    //   return data.rows
-    //     .filter((row) => row.koi_period && row.koi_prad)
-    //     .map((row) => ({
-    //       x: parseFloat(row.koi_period),
-    //       y: parseFloat(row.koi_prad),
-    //       disposition: row.Predicted_Disposition,
-    //     }))
-    //     .filter((point) => !isNaN(point.x) && !isNaN(point.y))
-    //     .slice(0, 200); // Limit for performance
-    // }, [data]);
+  // -----------------------------
+  // Chart Components
+  // -----------------------------
 
-    const scatterData = useMemo(() => {
+  const ScatterPlot: React.FC = () => {
+    const scatter = useMemo(() => {
       if (!data?.rows) return [];
       return data.rows
-        .map((row) => {
-          const period = parseFloat(row.koi_period || row["Period (days)"]);
-          const radius = parseFloat(row.koi_prad || row["Radius (R⊕)"]);
-          return {
-            x: period,
-            y: radius,
-            disposition: row.Predicted_Disposition || row.Classification,
-          };
+        .map((r) => {
+          const x = parseFloat(r.period ?? ""); // your x-axis
+          const y = parseFloat(r.radius ?? r.depth ?? ""); // your y-axis
+          const disp = String(
+            r.Predicted_Disposition ?? r.koi_disposition ?? "UNKNOWN"
+          ).toUpperCase();
+          return { x, y, disp };
         })
-        .filter((point) => !isNaN(point.x) && !isNaN(point.y));
+        .filter((p) => !isNaN(p.x) && !isNaN(p.y));
     }, [data]);
 
-    const maxX =
-      scatterData.length > 0 ? Math.max(...scatterData.map((d) => d.x)) : 0;
-    const maxY =
-      scatterData.length > 0 ? Math.max(...scatterData.map((d) => d.y)) : 0;
+    const maxX = Math.max(...scatter.map((d) => d.x), 1);
+    const maxY = Math.max(...scatter.map((d) => d.y), 1);
+
+    const color = (disp: string) => {
+      switch (disp) {
+        case "CP":
+        case "CONFIRMED":
+          return "#10b981";
+        case "PC":
+        case "CANDIDATE":
+          return "#facc15";
+        case "FP":
+        case "FALSE POSITIVE":
+          return "#ef4444";
+        default:
+          return "#94a3b8";
+      }
+    };
 
     return (
-      <div className="bg-slate-800/50 rounded-lg p-6">
-        <h4 className="text-lg font-semibold text-white mb-4">
-          Period vs Radius Scatter Plot
+      <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50">
+        <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
+          <ScatterChart className="w-5 h-5 text-purple-400" />
+          <span>Orbital Period vs Planet Radius</span>
         </h4>
-        <div className="relative h-64 bg-slate-900/50 rounded border border-slate-600">
+
+        <div className="relative h-64 bg-slate-900/40 rounded-lg overflow-hidden">
           <svg className="w-full h-full" viewBox="0 0 400 250">
-            {/* Axes */}
-            <line
-              x1="40"
-              y1="210"
-              x2="360"
-              y2="210"
-              stroke="#64748b"
-              strokeWidth="1"
-            />
-            <line
-              x1="40"
-              y1="210"
-              x2="40"
-              y2="30"
-              stroke="#64748b"
-              strokeWidth="1"
-            />
-
-            {/* Data points */}
-            {scatterData.map((point, index) => {
-              const x = 40 + (point.x / maxX) * 320;
-              const y = 210 - (point.y / maxY) * 180;
-              const color =
-                point.disposition === "CONFIRMED"
-                  ? "#10b981"
-                  : point.disposition === "CANDIDATE"
-                  ? "#f59e0b"
-                  : "#ef4444";
-
+            {/* Grid lines - horizontal */}
+            {[...Array(5)].map((_, i) => {
+              const y = 210 - (i * 180) / 4;
               return (
-                <circle
-                  key={index}
-                  cx={x}
-                  cy={y}
-                  r="2"
-                  fill={color}
-                  opacity="0.7"
+                <line
+                  key={`hgrid-${i}`}
+                  x1="40"
+                  x2="360"
+                  y1={y}
+                  y2={y}
+                  stroke="#64748b"
+                  strokeDasharray="2,2"
                 />
               );
             })}
 
-            {/* Labels */}
+            {/* Grid lines - vertical */}
+            {[...Array(5)].map((_, i) => {
+              const x = 40 + (i * 320) / 4;
+              return (
+                <line
+                  key={`vgrid-${i}`}
+                  y1="210"
+                  y2="30"
+                  x1={x}
+                  x2={x}
+                  stroke="#64748b"
+                  strokeDasharray="2,2"
+                />
+              );
+            })}
+
+            {/* Scatter points */}
+            {scatter.map((p, i) => {
+              const x = 40 + (p.x / maxX) * 320;
+              const y = 210 - (p.y / maxY) * 180;
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r="4"
+                  fill={color(p.disp)}
+                  stroke="#000"
+                  strokeWidth="0.3"
+                  opacity="0.8"
+                />
+              );
+            })}
+
+            {/* Axes labels */}
             <text
               x="200"
               y="235"
@@ -152,109 +183,115 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
               textAnchor="middle"
               transform="rotate(-90 20 120)"
             >
-              Planet Radius (R⊕)
+              Radius (R⊕)
             </text>
+
+            {/* Legend - moved outside plotting area */}
+            <g transform={`translate(370, 40)`}>
+              {["CONFIRMED", "CANDIDATE", "FALSE POSITIVE"].map((disp, i) => (
+                <g key={`legend-${i}`} transform={`translate(0, ${i * 20})`}>
+                  <rect width="10" height="10" fill={color(disp)} />
+                  <text x="14" y="10" fill="#fff" fontSize="10">
+                    {disp}
+                  </text>
+                </g>
+              ))}
+            </g>
           </svg>
-        </div>
-        <div className="mt-4 flex items-center space-x-6 text-sm">
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span className="text-slate-400">Confirmed</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-            <span className="text-slate-400">Candidate</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-            <span className="text-slate-400">False Positive</span>
-          </div>
         </div>
       </div>
     );
   };
 
   const HistogramChart: React.FC = () => {
-    const histogramData = useMemo(() => {
-      // Safe fallback: empty array if data.rows is undefined
-      const periods =
-        data?.rows?.map((row) => parseFloat(row.koi_period)) ?? [];
-
-      const validPeriods = periods
-        .filter((val) => !isNaN(val) && val > 0)
-        .sort((a, b) => a - b);
-
-      if (validPeriods.length === 0) return [];
-
-      const bins = 20;
-      const min = validPeriods[0];
-      const max = validPeriods[validPeriods.length - 1];
-      const binWidth = (max - min) / bins;
-
-      const histogram = Array(bins).fill(0);
-      validPeriods.forEach((period) => {
-        const binIndex = Math.min(
-          bins - 1,
-          Math.floor((period - min) / binWidth)
-        );
-        histogram[binIndex]++;
-      });
-
-      return histogram.map((count, index) => ({
-        binStart: min + index * binWidth,
-        binEnd: min + (index + 1) * binWidth,
-        count,
-      }));
+    const periods = useMemo(() => {
+      const vals =
+        data?.rows
+          ?.map((r) => parseFloat(r.period ?? "")) // <- use 'period' here
+          .filter((v) => !isNaN(v) && v > 0) || [];
+      vals.sort((a, b) => a - b);
+      return vals;
     }, [data]);
 
-    const maxCount = Math.max(...histogramData.map((d) => d.count));
+    if (periods.length === 0)
+      return (
+        <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700/50">
+          <p className="text-slate-400 text-sm">No valid orbital data.</p>
+        </div>
+      );
+
+    const bins = 25;
+    const min = periods[0],
+      max = periods[periods.length - 1],
+      width = (max - min) / bins;
+    const histogram = Array(bins).fill(0);
+    periods.forEach((v) => {
+      const i = Math.min(bins - 1, Math.floor((v - min) / width));
+      histogram[i]++;
+    });
+    const maxCount = Math.max(...histogram);
 
     return (
-      <div className="bg-slate-800/50 rounded-lg p-6">
-        <h4 className="text-lg font-semibold text-white mb-4">
-          Orbital Period Distribution
+      <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50">
+        <h4 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
+          <BarChart className="w-5 h-5 text-purple-400" />
+          <span>Orbital Period Distribution</span>
         </h4>
-        <div className="relative h-64 bg-slate-900/50 rounded border border-slate-600">
+        <div className="relative h-64 bg-slate-900/40 rounded-lg overflow-hidden">
           <svg className="w-full h-full" viewBox="0 0 400 250">
-            {/* Axes */}
-            <line
-              x1="40"
-              y1="210"
-              x2="360"
-              y2="210"
-              stroke="#64748b"
-              strokeWidth="1"
-            />
-            <line
-              x1="40"
-              y1="210"
-              x2="40"
-              y2="30"
-              stroke="#64748b"
-              strokeWidth="1"
-            />
-
-            {/* Bars */}
-            {histogramData.map((bin, index) => {
-              const x = 40 + index * (320 / histogramData.length);
-              const height = (bin.count / maxCount) * 180;
-              const y = 210 - height;
-              const barWidth = 320 / histogramData.length - 2;
-
+            {/* Grid lines - horizontal */}
+            {[...Array(5)].map((_, i) => {
+              const y = 210 - (i * 180) / 4;
               return (
-                <rect
-                  key={index}
-                  x={x}
-                  y={y}
-                  width={barWidth}
-                  height={height}
-                  fill="#8b5cf6"
-                  opacity="0.7"
+                <line
+                  key={`hgrid-${i}`}
+                  x1="40"
+                  x2="360"
+                  y1={y}
+                  y2={y}
+                  stroke="#64748b"
+                  strokeDasharray="2,2"
                 />
               );
             })}
 
-            {/* Labels */}
+            {/* Grid lines - vertical */}
+            {[...Array(5)].map((_, i) => {
+              const x = 40 + (i * 320) / 4;
+              return (
+                <line
+                  key={`vgrid-${i}`}
+                  y1="210"
+                  y2="30"
+                  x1={x}
+                  x2={x}
+                  stroke="#64748b"
+                  strokeDasharray="2,2"
+                />
+              );
+            })}
+
+            {/* Bars */}
+            {histogram.map((count, i) => {
+              const x = 40 + i * (320 / bins);
+              const height = (count / maxCount) * 180;
+              const y = 210 - height;
+              return (
+                <rect
+                  key={i}
+                  x={x}
+                  y={y}
+                  width={320 / bins - 2}
+                  height={height}
+                  fill="#a78bfa"
+                  stroke="#7c3aed"
+                  strokeWidth="0.5"
+                  opacity="0.8"
+                />
+              );
+            })}
+
+            {/* Axes labels */}
             <text
               x="200"
               y="235"
@@ -280,131 +317,169 @@ const DataExploration: React.FC<DataExplorationProps> = ({ data }) => {
     );
   };
 
+  const OverviewPanel: React.FC = () => {
+    const total = stats.total || 1;
+    const colors = ["#10b981", "#facc15", "#ef4444"];
+    const entries = Object.entries(stats.dispositions);
+    const totalConfirmed = entries.reduce((a, [_, v]) => a + v, 0);
+    let cumulative = 0;
+
+    return (
+      <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50">
+        <h4 className="text-lg font-semibold text-white mb-4 flex items-center space-x-2">
+          <PieChart className="w-5 h-5 text-purple-400" />
+          <span>Classification Distribution</span>
+        </h4>
+
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          {/* Donut chart */}
+          <svg className="w-40 h-40 mx-auto" viewBox="0 0 36 36">
+            {entries.map(([disp, count], i) => {
+              const start = (cumulative / totalConfirmed) * 100;
+              cumulative += count;
+              const end = (cumulative / totalConfirmed) * 100;
+              const offset = 100 - end;
+              const strokeDasharray = `${end - start} ${100 - (end - start)}`;
+              return (
+                <circle
+                  key={i}
+                  cx="18"
+                  cy="18"
+                  r="15.9"
+                  fill="transparent"
+                  stroke={colors[i % colors.length]}
+                  strokeWidth="2.5"
+                  strokeDasharray={strokeDasharray}
+                  strokeDashoffset={offset}
+                />
+              );
+            })}
+            <text
+              x="18"
+              y="20.5"
+              fill="#fff"
+              fontSize="6"
+              textAnchor="middle"
+              fontWeight="bold"
+            >
+              {total}
+            </text>
+          </svg>
+
+          {/* Breakdown */}
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {entries.map(([disp, count], i) => (
+              <div key={i} className="bg-slate-700/30 rounded-lg p-4">
+                <div
+                  className="text-2xl font-bold mb-1"
+                  style={{ color: colors[i % colors.length] }}
+                >
+                  {count}
+                </div>
+                <div className="text-sm text-slate-400">
+                  {disp.charAt(0) + disp.slice(1).toLowerCase()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // -----------------------------
+  // Main UI
+  // -----------------------------
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-white mb-2">
-            Data Exploration
-          </h2>
+          <h2 className="text-3xl font-bold text-white">Data Exploration</h2>
           <p className="text-slate-400">
-            Statistical analysis and visualizations
+            Visual analysis of model predictions and astrophysical features
           </p>
         </div>
-
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setSelectedChart("scatter")}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-              selectedChart === "scatter"
-                ? "bg-purple-500 text-white"
-                : "bg-slate-700 text-slate-400 hover:text-white"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" />
-            <span>Scatter</span>
-          </button>
-
-          <button
-            onClick={() => setSelectedChart("histogram")}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-              selectedChart === "histogram"
-                ? "bg-purple-500 text-white"
-                : "bg-slate-700 text-slate-400 hover:text-white"
-            }`}
-          >
-            <BarChart className="w-4 h-4" />
-            <span>Histogram</span>
-          </button>
+          {[
+            ["overview", PieChart],
+            ["scatter", TrendingUp],
+            ["histogram", BarChart],
+          ].map(([type, Icon]) => (
+            <button
+              key={type}
+              onClick={() => setSelectedChart(type as any)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                selectedChart === type
+                  ? "bg-purple-500 text-white"
+                  : "bg-slate-700 text-slate-400 hover:text-white"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span className="capitalize">{type}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Summary Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {Object.entries(stats.dispositions).map(([disposition, count]) => (
-          <div key={disposition} className="bg-slate-700/30 rounded-lg p-4">
-            <div className="text-2xl font-bold text-purple-400 mb-1">
-              {count}
+      {/* Dynamic chart view */}
+      {selectedChart === "overview" && <OverviewPanel />}
+      {selectedChart === "scatter" && <ScatterPlot />}
+      {selectedChart === "histogram" && <HistogramChart />}
+
+      {/* Stats summary */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {Object.entries(stats.columns).map(([col, s], i) => (
+          <div
+            key={i}
+            className="bg-slate-800/50 rounded-lg p-5 border border-slate-700/50"
+          >
+            <h4 className="text-white font-semibold mb-2 capitalize">
+              {col.replace("koi_", "")}
+            </h4>
+            <div className="grid grid-cols-2 text-sm text-slate-400">
+              <div>Min:</div>
+              <div className="text-white">{s.min.toFixed(2)}</div>
+              <div>Max:</div>
+              <div className="text-white">{s.max.toFixed(2)}</div>
+              <div>Mean:</div>
+              <div className="text-white">{s.mean.toFixed(2)}</div>
+              <div>Count:</div>
+              <div className="text-white">{s.count}</div>
             </div>
-            <div className="text-sm text-slate-400">{disposition}</div>
           </div>
         ))}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {selectedChart === "scatter" && <ScatterPlot />}
-        {selectedChart === "histogram" && <HistogramChart />}
-
-        <div className="bg-slate-800/50 rounded-lg p-6">
-          <h4 className="text-lg font-semibold text-white mb-4">
-            Statistical Summary
-          </h4>
-          <div className="space-y-4">
-            {Object.entries(stats.columnStats).map(
-              ([column, stat]: [string, any]) => (
-                <div key={column} className="border-b border-slate-700/50 pb-3">
-                  <div className="font-medium text-white mb-2">
-                    {column.replace("koi_", "").replace("_", " ").toUpperCase()}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-slate-400">
-                    <div>
-                      Min:{" "}
-                      <span className="text-white">{stat.min?.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      Max:{" "}
-                      <span className="text-white">{stat.max?.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      Mean:{" "}
-                      <span className="text-white">
-                        {stat.mean?.toFixed(2)}
-                      </span>
-                    </div>
-                    <div>
-                      Count: <span className="text-white">{stat.count}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Insights Panel */}
+      {/* Insights */}
       <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl border border-purple-500/20 p-6">
         <h4 className="text-lg font-semibold text-white mb-4 flex items-center space-x-2">
-          <PieChart className="w-5 h-5 text-purple-400" />
+          <Activity className="w-5 h-5 text-purple-400" />
           <span>Key Insights</span>
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <div className="text-purple-400 font-medium mb-1">
-              Classification Distribution
-            </div>
-            <div className="text-slate-300">
-              {Object.entries(stats.dispositions).map(
-                ([disp, count], index) => (
-                  <span key={disp}>
-                    {disp}:{" "}
-                    {((count / (data?.rows?.length || 1)) * 100).toFixed(1)}%
-                    {index < Object.keys(stats.dispositions).length - 1 &&
-                      " • "}
-                  </span>
-                )
-              )}
-            </div>
-          </div>
-          <div>
-            <div className="text-blue-400 font-medium mb-1">Data Quality</div>
-            <div className="text-slate-300">
-              {data?.rows?.length ?? 0} total objects analyzed with{" "}
-              {data?.columns?.length ?? 0} features
-            </div>
-          </div>
-        </div>
+        <ul className="text-sm text-slate-300 space-y-2">
+          <li>
+            🌍 <b>{Object.keys(stats.dispositions).length}</b> classification
+            categories detected in current dataset.
+          </li>
+          <li>
+            📈 Typical exoplanet radii cluster between{" "}
+            <b>
+              {stats.columns.koi_prad?.min.toFixed(1)}–
+              {stats.columns.koi_prad?.max.toFixed(1)} R⊕
+            </b>{" "}
+            with median {stats.columns.koi_prad?.median?.toFixed(2)}.
+          </li>
+          <li>
+            ☀️ Stellar temperatures range from{" "}
+            <b>{stats.columns.koi_teff?.min?.toFixed(0)}K</b> to{" "}
+            <b>{stats.columns.koi_teff?.max?.toFixed(0)}K</b>.
+          </li>
+          <li>
+            🔍 Explore scatter plots to see how orbital period and planet radius
+            cluster by classification type.
+          </li>
+        </ul>
       </div>
     </div>
   );

@@ -7,8 +7,11 @@ import joblib
 import tempfile
 import shutil
 import os
-from exoplanet_pipeline import load_raw_dataset, load_features
+from exoplanet_pipeline import load_raw_dataset, load_features, train_unified, build_model
 from pydantic import BaseModel
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+import xgboost as xgb
 
 
 app = FastAPI()
@@ -104,6 +107,8 @@ async def upload(
     # ML prediction branch
     # -------------------------------
     X, _ = load_features(df, mission)
+    print("Columns passed to model:", X.columns.tolist())
+    print("First row features:\n", X.iloc[0])
 
     # Fill numeric NaNs with median
     X_numeric = X.select_dtypes(include=[np.number])
@@ -113,6 +118,8 @@ async def upload(
     preds = model.predict(X)
     probs = model.predict_proba(X)  # shape (n_samples, n_classes)
     preds_decoded = encoder.inverse_transform(preds)
+    print("Label encoder classes:", encoder.classes_)
+
 
     # Confidence = probability of predicted class
     confidences = []
@@ -135,6 +142,7 @@ async def upload(
 
     # Make results JSON-safe
     rows_safe = make_json_safe(results)
+
 
     return JSONResponse(
         {"columns": results.columns.tolist(), "rows": rows_safe},

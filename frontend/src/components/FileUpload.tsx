@@ -67,6 +67,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       }
 
       const classifyData = await classifyResponse.json();
+      console.log(classifyData);
       onClassify(classifyData); // pass classification data up
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
